@@ -1,310 +1,439 @@
 <script setup>
-definePageMeta({ layout: 'default' })
-
-// Section 1: Data Fetching (Populate is key here to get enrollment data)
-const { data: students, pending, refresh } = await useFetch('http://localhost:1337/api/students?populate[enrollments][populate]=course')
-
-// Section 2: UI States
-const search = ref('')
-const dialog = ref(false)
-const dialogDelete = ref(false)
-const dialogView = ref(false) 
-const dialogSuccess = ref(false)
-const dialogError = ref(false)
-const saving = ref(false)
-const statusMessage = ref('')
-
-// Section 3: Popup Handlers
-const showSuccess = (msg) => {
-  statusMessage.value = msg
-  dialogSuccess.value = true
-}
-
-const showError = (msg) => {
-  statusMessage.value = msg
-  dialogError.value = true
-}
-
-// Section 4: Form State
-const editedItem = ref({
-  documentId: '',
-  FirstName: '',
-  LastName: '',
-  Email: '',
-  enrollments: [] 
+definePageMeta({
+  layout: 'default'
 })
 
-const headers = [
-  { title: 'ID', key: 'id', align: 'start' },
-  { title: 'First Name', key: 'FirstName' }, 
-  { title: 'Last Name', key: 'LastName' },   
-  { title: 'Email', key: 'Email' },          
-  { title: 'Actions', key: 'actions', sortable: false, align: 'end' },
+const {
+  students,
+  addStudent,
+  getStudentLedger,
+} = usePmccStore()
+
+const search = ref('')
+const dialog = ref(false)
+const editMode = ref(false)
+const editingId = ref('')
+const deleteDialog = ref(false)
+const deletingStudent = ref(null)
+
+const snackbar = ref(false)
+const snackText = ref('')
+const snackColor = ref('success')
+
+const scholarshipOptions = [
+  { title: 'None (0% Discount)', value: 'None', rate: 0 },
+  { title: '20% Academic Scholar', value: '20% Academic Scholar', rate: 0.20 },
+  { title: '50% Partial Scholar', value: '50% Partial Scholar', rate: 0.50 },
+  { title: '100% Full Scholar', value: '100% Full Scholar', rate: 1.00 },
 ]
 
-// Section 5: Methods
-const viewStudent = (item) => {
-  editedItem.value = { ...item }
-  dialogView.value = true
-}
+const programs = [
+  'BS Information Technology',
+  'BS Accountancy',
+  'BS Computer Science',
+  'BS Business Administration',
+  'Bachelor of Elementary Education',
+]
 
-const editStudent = (item) => {
-  editedItem.value = { 
-    documentId: item.documentId, 
-    FirstName: item.FirstName, 
-    LastName: item.LastName, 
-    Email: item.Email 
+const yearLevels = ['1st Year', '2nd Year', '3rd Year', '4th Year']
+
+const form = ref({
+  studentNo: '',
+  fullName: '',
+  program: 'BS Information Technology',
+  yearLevel: '1st Year',
+  scholarshipType: 'None',
+})
+
+const scholarCount = computed(() => students.value.filter((s) => Number(s.discountRate || 0) > 0).length)
+const clearedCount = computed(
+  () => students.value.filter((s) => getStudentLedger(s.id).examPermitStatus === 'CLEARED').length
+)
+const blockedCount = computed(
+  () => students.value.filter((s) => getStudentLedger(s.id).examPermitStatus === 'BLOCKED').length
+)
+
+const filteredStudents = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  if (!q) return students.value
+  return students.value.filter(
+    (s) =>
+      s.fullName.toLowerCase().includes(q) ||
+      s.studentNo.toLowerCase().includes(q) ||
+      s.program.toLowerCase().includes(q) ||
+      s.scholarshipType.toLowerCase().includes(q)
+  )
+})
+
+const openAddDialog = () => {
+  editMode.value = false
+  editingId.value = ''
+  const nextNum = String(students.value.length + 1).padStart(4, '0')
+  form.value = {
+    studentNo: `PMCC-2026-${nextNum}`,
+    fullName: '',
+    program: 'BS Information Technology',
+    yearLevel: '1st Year',
+    scholarshipType: 'None',
   }
   dialog.value = true
 }
 
-const close = () => {
-  dialog.value = false
-  nextTick(() => {
-    editedItem.value = { documentId: '', FirstName: '', LastName: '', Email: '', enrollments: [] }
-  })
+const openEditDialog = (student) => {
+  editMode.value = true
+  editingId.value = student.id
+  form.value = {
+    studentNo: student.studentNo,
+    fullName: student.fullName,
+    program: student.program,
+    yearLevel: student.yearLevel,
+    scholarshipType: student.scholarshipType,
+  }
+  dialog.value = true
 }
 
-const saveUpdate = async () => {
-  if (!editedItem.value.FirstName || !editedItem.value.LastName) {
-    showError("Please fill in the required fields.")
+const saveStudent = () => {
+  if (!form.value.studentNo.trim() || !form.value.fullName.trim()) {
+    snackText.value = 'Please fill in Student Number and Full Name.'
+    snackColor.value = 'warning'
+    snackbar.value = true
     return
   }
 
-  saving.value = true
-  try {
-    await $fetch(`http://localhost:1337/api/students/${editedItem.value.documentId}`, {
-      method: 'PUT',
-      body: { 
-        data: {
-          FirstName: editedItem.value.FirstName,
-          LastName: editedItem.value.LastName,
-          Email: editedItem.value.Email
-        } 
+  const selectedScholar = scholarshipOptions.find((o) => o.value === form.value.scholarshipType)
+  const discountRate = selectedScholar ? selectedScholar.rate : 0
+
+  if (editMode.value) {
+    const idx = students.value.findIndex((s) => s.id === editingId.value)
+    if (idx !== -1) {
+      students.value[idx] = {
+        ...students.value[idx],
+        studentNo: form.value.studentNo.trim(),
+        fullName: form.value.fullName.trim(),
+        program: form.value.program,
+        yearLevel: form.value.yearLevel,
+        scholarshipType: form.value.scholarshipType,
+        discountRate,
       }
+    }
+    snackText.value = 'Student record and scholarship updated!'
+  } else {
+    addStudent({
+      studentNo: form.value.studentNo.trim(),
+      fullName: form.value.fullName.trim(),
+      program: form.value.program,
+      yearLevel: form.value.yearLevel,
+      scholarshipType: form.value.scholarshipType,
+      discountRate,
     })
-    await refresh()
-    close()
-    showSuccess('Student Profile Updated Successfully!')
-  } catch (error) {
-    showError('Update failed. Please check your connection.')
-  } finally {
-    saving.value = false
+    snackText.value = 'New student registered successfully!'
   }
+
+  snackColor.value = 'success'
+  snackbar.value = true
+  dialog.value = false
 }
 
 const confirmDelete = (student) => {
-  editedItem.value = { ...student }
-  dialogDelete.value = true
+  deletingStudent.value = student
+  deleteDialog.value = true
 }
 
-const deleteStudentConfirm = async () => {
-  saving.value = true
-  try {
-    await $fetch(`http://localhost:1337/api/students/${editedItem.value.documentId}`, { method: 'DELETE' });
-    await refresh();
-    dialogDelete.value = false
-    showSuccess('Student Record Removed!')
-  } catch (error) {
-    showError('Could not delete student.')
-  } finally {
-    saving.value = false
-  }
-}
-
-// Helper para sa kulay ng status sa Profile View
-const getStatusColor = (status) => {
-  if (status === 'Enrolled') return 'blue-lighten-3'
-  if (status === 'Dropped') return 'red-lighten-3'
-  if (status === 'Completed') return 'green-lighten-3'
-  if (status === 'Pending') return 'orange-lighten-3'
-  return 'grey-lighten-1'
-}
-
-// Helper para sa Icons base sa Status
-const getStatusIcon = (status) => {
-  if (status === 'Enrolled') return 'mdi-check-circle'
-  if (status === 'Completed') return 'mdi-sticker-check-outline'
-  if (status === 'Pending') return 'mdi-clock-outline'
-  return 'mdi-minus-circle'
+const executeDelete = () => {
+  if (!deletingStudent.value) return
+  students.value = students.value.filter((s) => s.id !== deletingStudent.value.id)
+  deleteDialog.value = false
+  deletingStudent.value = null
+  snackText.value = 'Student record removed.'
+  snackColor.value = 'info'
+  snackbar.value = true
 }
 </script>
 
 <template>
-  <div class="pa-6">
-    <v-row class="mb-6 d-flex align-center">
-      <v-col>
-        <h1 class="text-h4 font-weight-bold text-white">Student Management</h1>
-        <p class="text-subtitle-2 text-grey-lighten-1">Manage and edit student information</p>
+  <div class="d-flex flex-column ga-5">
+    <!-- Dark Sage Glass Hero Banner (Matches Dashboard Banner) -->
+    <div class="glass-hero-banner pa-5 pa-md-6 d-flex flex-wrap align-center justify-space-between ga-4">
+      <div>
+        <div class="text-caption font-weight-bold text-green-lighten-3 mb-1" style="letter-spacing: 1px;">
+          STUDENT REGISTRY & SCHOLARSHIPS
+        </div>
+        <h1 class="text-h4 font-weight-extrabold text-white mb-1" style="letter-spacing: -0.02em;">
+          Students & <span class="glass-serif text-green-lighten-2">Scholars</span>
+        </h1>
+        <p class="text-body-2 text-grey-lighten-2 mb-0">
+          Manage student profiles, scholarship discounts (0%, 20%, 50%, 100%), and exam permit standing.
+        </p>
+      </div>
+
+      <v-btn
+        color="white"
+        variant="flat"
+        class="text-none rounded-pill text-grey-darken-4 font-weight-bold px-6"
+        prepend-icon="mdi-account-plus-outline"
+        @click="openAddDialog"
+      >
+        Register Student
+      </v-btn>
+    </div>
+
+    <!-- Compact Frosted Metrics Strip -->
+    <v-row dense>
+      <v-col cols="12" sm="4">
+        <div class="glass-subcard pa-4">
+          <div class="d-flex align-center justify-space-between mb-2">
+            <span class="text-caption font-weight-bold text-grey-darken-2">REGISTERED STUDENTS</span>
+            <v-chip size="x-small" color="green-darken-2" variant="tonal" class="font-weight-bold">
+              ROSTER
+            </v-chip>
+          </div>
+          <div class="text-h5 font-weight-extrabold text-grey-darken-4">{{ students.length }} Students</div>
+          <div class="text-caption text-grey-darken-2 mt-1">Active PMCC student profiles</div>
+        </div>
       </v-col>
-      <v-col class="text-right">
-        <v-btn color="blue" prepend-icon="mdi-plus" to="/students/add" rounded="lg" class="text-none px-6" elevation="4">
-          ADD STUDENT
-        </v-btn>
+
+      <v-col cols="12" sm="4">
+        <div class="glass-subcard pa-4">
+          <div class="d-flex align-center justify-space-between mb-2">
+            <span class="text-caption font-weight-bold text-grey-darken-2">SCHOLARSHIP GRANTS</span>
+            <v-chip size="x-small" color="amber-darken-3" variant="tonal" class="font-weight-bold">
+              DISCOUNTS
+            </v-chip>
+          </div>
+          <div class="text-h5 font-weight-extrabold text-grey-darken-4">{{ scholarCount }} Scholars</div>
+          <div class="text-caption text-grey-darken-2 mt-1">Applied to tuition computation</div>
+        </div>
+      </v-col>
+
+      <v-col cols="12" sm="4">
+        <div class="glass-subcard pa-4">
+          <div class="d-flex align-center justify-space-between mb-2">
+            <span class="text-caption font-weight-bold text-grey-darken-2">PERMIT STANDING</span>
+            <v-chip size="x-small" color="#141c18" variant="flat" class="text-white font-weight-bold">
+              PERMITS
+            </v-chip>
+          </div>
+          <div class="text-h5 font-weight-extrabold text-grey-darken-4">
+            {{ clearedCount }} Cleared • {{ blockedCount }} Blocked
+          </div>
+          <div class="text-caption text-grey-darken-2 mt-1">Synced with student balances</div>
+        </div>
       </v-col>
     </v-row>
 
-    <v-text-field 
-      v-model="search" 
-      prepend-inner-icon="mdi-magnify" 
-      label="Search students..." 
-      variant="outlined" 
-      class="glass-search mb-8" 
-      hide-details 
-      clearable 
-    />
+    <!-- Search & Table Card -->
+    <v-card class="glass-panel pa-5 pa-md-6">
+      <div class="d-flex flex-wrap align-center justify-space-between ga-3 mb-4">
+        <v-text-field
+          v-model="search"
+          placeholder="Search student name, ID number, program, or scholarship..."
+          prepend-inner-icon="mdi-magnify"
+          variant="outlined"
+          density="compact"
+          hide-details
+          style="max-width: 420px;"
+        />
 
-    <v-card class="glass-table-card" elevation="0">
-      <v-data-table 
-        :headers="headers" 
-        :items="students?.data || []" 
-        :loading="pending" 
-        :search="search" 
-        theme="dark" 
-        class="glass-table"
-      >
-        <template v-slot:item.actions="{ item }">
-          <v-icon size="small" class="me-4" color="green-lighten-2" @click="viewStudent(item)">mdi-eye</v-icon>
-          <v-icon size="small" class="me-4" color="blue-lighten-2" @click="editStudent(item)">mdi-pencil</v-icon>
-          <v-icon size="small" color="red-lighten-2" @click="confirmDelete(item)">mdi-delete</v-icon>
-        </template>
-      </v-data-table>
+        <div class="text-caption text-grey-darken-2">
+          Showing <strong class="text-grey-darken-4">{{ filteredStudents.length }}</strong> of {{ students.length }} students
+        </div>
+      </div>
+
+      <v-table class="bg-transparent text-grey-darken-4">
+        <thead>
+          <tr>
+            <th class="text-grey-darken-2 font-weight-bold">Student No.</th>
+            <th class="text-grey-darken-2 font-weight-bold">Full Name</th>
+            <th class="text-grey-darken-2 font-weight-bold">Program & Year</th>
+            <th class="text-grey-darken-2 font-weight-bold">Scholarship / Discount</th>
+            <th class="text-center text-grey-darken-2 font-weight-bold">Permit Status</th>
+            <th class="text-right text-grey-darken-2 font-weight-bold">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="stu in filteredStudents" :key="stu.id">
+            <td class="font-weight-bold text-green-darken-4">{{ stu.studentNo }}</td>
+            <td class="font-weight-bold text-grey-darken-4">{{ stu.fullName }}</td>
+            <td>
+              <div class="text-grey-darken-4 font-weight-semibold">{{ stu.program }}</div>
+              <div class="text-caption text-grey-darken-2">{{ stu.yearLevel }}</div>
+            </td>
+            <td>
+              <v-chip
+                size="small"
+                variant="tonal"
+                :color="stu.discountRate > 0 ? 'amber-darken-3' : 'grey-darken-1'"
+                class="font-weight-semibold"
+              >
+                {{ stu.scholarshipType }}
+              </v-chip>
+            </td>
+            <td class="text-center">
+              <v-chip
+                size="x-small"
+                variant="flat"
+                class="text-white font-weight-bold"
+                :color="
+                  getStudentLedger(stu.id).examPermitStatus === 'CLEARED'
+                    ? 'green-darken-2'
+                    : getStudentLedger(stu.id).examPermitStatus === 'BLOCKED'
+                    ? 'red-darken-2'
+                    : 'grey-darken-1'
+                "
+              >
+                {{ getStudentLedger(stu.id).examPermitStatus }}
+              </v-chip>
+            </td>
+            <td class="text-right">
+              <v-btn
+                icon="mdi-pencil-outline"
+                size="small"
+                variant="text"
+                color="grey-darken-3"
+                title="Edit Student & Scholarship"
+                @click="openEditDialog(stu)"
+              />
+              <v-btn
+                icon="mdi-delete-outline"
+                size="small"
+                variant="text"
+                color="red-darken-2"
+                title="Delete Student"
+                @click="confirmDelete(stu)"
+              />
+            </td>
+          </tr>
+          <tr v-if="filteredStudents.length === 0">
+            <td colspan="6" class="text-center text-grey-darken-2 py-6">
+              No matching student records found.
+            </td>
+          </tr>
+        </tbody>
+      </v-table>
     </v-card>
 
-    <v-dialog v-model="dialogView" max-width="600">
-      <v-card class="glass-modal-modern pa-8">
-        <div class="text-center mb-6">
-          <v-avatar color="blue-darken-4" size="80" class="mb-4 shadow-glow">
-            <v-icon size="40" color="blue-lighten-2">mdi-account-details</v-icon>
-          </v-avatar>
-          <h2 class="text-h5 text-white font-weight-bold">Student Profile</h2>
+    <!-- Add / Edit Student Dialog -->
+    <v-dialog v-model="dialog" max-width="500">
+      <v-card class="glass-modal pa-6">
+        <div class="d-flex align-center justify-space-between mb-4">
+          <h3 class="text-h6 font-weight-extrabold text-grey-darken-4">
+            {{ editMode ? 'Edit Student & Scholarship' : 'Register New Student' }}
+          </h3>
+          <v-btn icon="mdi-close" size="small" variant="text" color="grey-darken-3" @click="dialog = false" />
         </div>
 
-        <v-row class="text-white">
-          <v-col cols="6">
-            <p class="text-caption text-grey-lighten-1 mb-0">FIRST NAME</p>
-            <p class="text-body-1 font-weight-bold">{{ editedItem.FirstName }}</p>
+        <v-text-field
+          v-model="form.studentNo"
+          label="Student Number"
+          variant="outlined"
+          density="comfortable"
+          class="mb-3"
+        />
+
+        <v-text-field
+          v-model="form.fullName"
+          label="Full Name (First Middle Last)"
+          variant="outlined"
+          density="comfortable"
+          class="mb-3"
+        />
+
+        <v-select
+          v-model="form.program"
+          :items="programs"
+          label="Degree Program"
+          variant="outlined"
+          density="comfortable"
+          class="mb-3"
+        />
+
+        <v-row>
+          <v-col cols="12" sm="5">
+            <v-select
+              v-model="form.yearLevel"
+              :items="yearLevels"
+              label="Year Level"
+              variant="outlined"
+              density="comfortable"
+            />
           </v-col>
-          <v-col cols="6">
-            <p class="text-caption text-grey-lighten-1 mb-0">LAST NAME</p>
-            <p class="text-body-1 font-weight-bold">{{ editedItem.LastName }}</p>
-          </v-col>
-          <v-col cols="12">
-            <p class="text-caption text-grey-lighten-1 mb-0">EMAIL ADDRESS</p>
-            <p class="text-body-1">{{ editedItem.Email }}</p>
+          <v-col cols="12" sm="7">
+            <v-select
+              v-model="form.scholarshipType"
+              :items="scholarshipOptions"
+              item-title="title"
+              item-value="value"
+              label="Scholarship Grant"
+              variant="outlined"
+              density="comfortable"
+            />
           </v-col>
         </v-row>
 
-        <v-divider class="my-6 border-opacity-25"></v-divider>
-
-        <h3 class="text-subtitle-1 text-blue-lighten-3 mb-4">Enrolled Courses</h3>
-        
-        <v-list v-if="editedItem.enrollments?.length > 0" bg-color="transparent" class="pa-0">
-          <v-list-item v-for="en in editedItem.enrollments" :key="en.id" class="px-0 mb-2 border-list">
-            <template v-slot:prepend>
-              <v-icon 
-                :color="en.enrollmentStatus === 'Enrolled' ? 'blue' : 
-                        en.enrollmentStatus === 'Completed' ? 'green' : 
-                        en.enrollmentStatus === 'Pending' ? 'orange' : 'red'" 
-                class="mr-3"
-              >
-                {{ getStatusIcon(en.enrollmentStatus) }}
-              </v-icon>
-            </template>
-            <v-list-item-title class="text-white font-weight-medium">
-              {{ en.course?.Title || 'Untitled Course' }}
-            </v-list-item-title>
-            <v-list-item-subtitle 
-              :class="en.enrollmentStatus === 'Dropped' ? 'text-red-lighten-3' : 
-                      en.enrollmentStatus === 'Completed' ? 'text-green-lighten-3' : 
-                      en.enrollmentStatus === 'Pending' ? 'text-orange-lighten-3' : 'text-blue-lighten-3'"
-            >
-              Status: <span class="font-weight-bold">{{ en.enrollmentStatus }}</span>
-            </v-list-item-subtitle>
-          </v-list-item>
-        </v-list>
-        
-        <p v-else class="text-center text-grey-lighten-1 italic py-4">No active enrollments found.</p>
-
-        <v-card-actions class="px-0 pt-6">
-          <v-btn block color="blue" variant="tonal" rounded="lg" @click="dialogView = false">CLOSE</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
-    <v-dialog v-model="dialog" max-width="550" persistent>
-      <v-card class="glass-modal-modern pa-8">
-        <div class="text-center mb-6">
-          <div class="icon-glow mb-2">
-            <v-icon size="48" color="blue-lighten-2">mdi-account-edit</v-icon>
-          </div>
-          <h2 class="text-h5 font-weight-bold text-white">Update Profile</h2>
-          <p class="text-caption text-grey-lighten-1">Modify student details in the system</p>
-        </div>
-
-        <v-card-text class="px-0">
-          <v-text-field v-model="editedItem.FirstName" label="First Name" variant="outlined" class="custom-field mb-4" hide-details />
-          <v-text-field v-model="editedItem.LastName" label="Last Name" variant="outlined" class="custom-field mb-4" hide-details />
-          <v-text-field v-model="editedItem.Email" label="Email Address" variant="outlined" class="custom-field" hide-details />
-        </v-card-text>
-
-        <v-card-actions class="px-0 pt-6">
-          <v-btn variant="text" color="grey-lighten-1" class="text-none" @click="close">CANCEL</v-btn>
-          <v-spacer></v-spacer>
-          <v-btn color="blue" variant="elevated" rounded="lg" class="text-none px-8" :loading="saving" @click="saveUpdate">
-            Update Now
+        <div class="d-flex justify-end ga-2 mt-4">
+          <v-btn variant="text" color="grey-darken-3" class="text-none rounded-pill" @click="dialog = false">
+            Cancel
           </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
-    <v-dialog v-model="dialogDelete" max-width="450">
-      <v-card class="glass-modal-modern pa-8 text-center">
-        <v-avatar color="red-lighten-4" size="80" class="mb-4 shadow-glow-red">
-          <v-icon size="48" color="red-darken-2">mdi-alert-circle-outline</v-icon>
-        </v-avatar>
-        <h2 class="text-h5 text-white font-weight-bold mb-2">Confirm Delete</h2>
-        <p class="text-body-1 text-grey-lighten-1 mb-8">
-          Are you sure you want to remove <br>
-          <strong class="text-white">{{ editedItem.FirstName }} {{ editedItem.LastName }}</strong>?
-        </p>
-        <div class="d-flex justify-center gap-4">
-          <v-btn variant="text" color="white" @click="dialogDelete = false">NO, KEEP IT</v-btn>
-          <v-btn color="red-darken-1" variant="elevated" rounded="lg" class="px-6" @click="deleteStudentConfirm">YES, DELETE</v-btn>
+          <v-btn color="#141c18" variant="flat" class="text-none rounded-pill text-white font-weight-bold px-5" @click="saveStudent">
+            {{ editMode ? 'Save Changes' : 'Register Student' }}
+          </v-btn>
         </div>
       </v-card>
     </v-dialog>
 
-    <v-dialog v-model="dialogSuccess" max-width="400" persistent>
-      <v-card class="glass-modal-modern pa-8 text-center border-success">
-        <v-avatar color="green-lighten-4" size="80" class="mb-4 icon-glow-green">
-          <v-icon size="48" color="green-darken-2">mdi-check-circle</v-icon>
-        </v-avatar>
-        <h2 class="text-h5 font-weight-bold text-white mb-2">Success!</h2>
-        <p class="text-body-1 text-grey-lighten-1 mb-6">{{ statusMessage }}</p>
-        <v-btn color="green-darken-1" block size="large" rounded="lg" class="text-white" @click="dialogSuccess = false">
-          AWESOME
-        </v-btn>
+    <!-- Delete Confirmation Dialog -->
+    <v-dialog v-model="deleteDialog" max-width="380">
+      <v-card class="glass-modal pa-6">
+        <div class="text-h6 font-weight-extrabold text-grey-darken-4 mb-2">Remove Student?</div>
+        <p class="text-body-2 text-grey-darken-2 mb-5">
+          Are you sure you want to delete <strong class="text-grey-darken-4">{{ deletingStudent?.fullName }}</strong>?
+        </p>
+        <div class="d-flex justify-end ga-2">
+          <v-btn variant="text" color="grey-darken-3" class="text-none rounded-pill" @click="deleteDialog = false">
+            Cancel
+          </v-btn>
+          <v-btn color="red-darken-2" variant="flat" class="text-none rounded-pill text-white font-weight-bold" @click="executeDelete">
+            Delete
+          </v-btn>
+        </div>
       </v-card>
     </v-dialog>
+
+    <v-snackbar v-model="snackbar" :color="snackColor" :timeout="2500" rounded="lg">
+      {{ snackText }}
+    </v-snackbar>
   </div>
 </template>
 
 <style scoped>
-.shadow-glow { box-shadow: 0 0 20px rgba(33, 150, 243, 0.3); }
-.shadow-glow-red { box-shadow: 0 0 20px rgba(244, 67, 54, 0.3); }
-.border-list { border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
-.gap-4 { gap: 16px; }
+.glass-hero-banner {
+  background: linear-gradient(135deg, rgba(44, 68, 52, 0.92) 0%, rgba(25, 42, 32, 0.95) 100%);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  box-shadow:
+    0 18px 40px rgba(18, 38, 26, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  border-radius: 26px;
+}
 
-.glass-search :deep(.v-field) { background: rgba(255, 255, 255, 0.05) !important; border-radius: 16px !important; color: white !important; }
-.glass-search :deep(.v-field__input), .glass-search :deep(.v-label), .glass-search :deep(.v-field__prepend-inner .v-icon) { color: white !important; opacity: 1 !important; }
-.glass-modal-modern { background: rgba(18, 18, 18, 0.9) !important; backdrop-filter: blur(25px) saturate(180%); border: 1px solid rgba(255, 255, 255, 0.1) !important; border-radius: 32px !important; }
-.border-success { border: 1px solid rgba(76, 175, 80, 0.3) !important; }
-.icon-glow { display: inline-block; padding: 15px; background: rgba(33, 150, 243, 0.1); border-radius: 20px; }
-.icon-glow-green { box-shadow: 0 0 20px rgba(76, 175, 80, 0.2); }
-.custom-field :deep(.v-field) { background: rgba(255, 255, 255, 0.05) !important; border-radius: 12px !important; color: white !important; }
-.glass-table-card { background: rgba(255, 255, 255, 0.02) !important; backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.05) !important; border-radius: 24px !important; }
-.glass-table { background: transparent !important; }
-:deep(.v-data-table-header) { background: rgba(255, 255, 255, 0.05) !important; }
-:deep(.v-data-table__th) { color: #64B5F6 !important; font-weight: bold !important; }
+.glass-subcard {
+  background: rgba(255, 255, 255, 0.64);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.88);
+  box-shadow:
+    0 10px 24px rgba(20, 40, 28, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  border-radius: 22px;
+}
+
+:deep(.v-table th) {
+  border-bottom: 1px solid rgba(20, 28, 24, 0.12) !important;
+}
+:deep(.v-table td) {
+  border-bottom: 1px solid rgba(20, 28, 24, 0.08) !important;
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+}
 </style>

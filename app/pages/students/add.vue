@@ -1,157 +1,172 @@
 <script setup>
-definePageMeta({ layout: 'default' })
 const router = useRouter()
+const { addStudent, students } = usePmccStore()
 
-const loading = ref(false)
-const dialogSuccess = ref(false)
-const dialogError = ref(false)
-const statusMessage = ref('')
-
-const form = ref({
-  StudentID: '',
-  FirstName: '',
-  LastName: '',
-  Email: ''
+const nextNumber = computed(() => {
+  const num = students.value.length + 1
+  return `PMCC-2026-${String(num).padStart(4, '0')}`
 })
 
-const submitForm = async () => {
-  loading.value = true
-  try {
-    await $fetch('http://localhost:1337/api/students', {
-      method: 'POST',
-      body: { 
-        data: {
-          StudentID: form.value.StudentID,
-          FirstName: form.value.FirstName,
-          LastName: form.value.LastName,
-          Email: form.value.Email
-        } 
-      }
-    })
-    
-    // Imbes na alert, ipakita ang Success Popup
-    statusMessage.value = "Student added to Enroll Pro successfully."
-    dialogSuccess.value = true 
-  } catch (error) {
-    console.error(error)
-    // Imbes na alert, ipakita ang Error Popup
-    statusMessage.value = "Error: Check Strapi permissions or data format."
-    dialogError.value = true
-  } finally {
-    loading.value = false
-  }
-}
+const studentNo = ref('')
+const fullName = ref('')
+const program = ref('BS Information Technology')
+const yearLevel = ref('1st Year')
+const scholarshipPreset = ref('None (0%)')
+const errorMsg = ref('')
 
-// Function para sa button ng Success Modal
-const handleSuccessDone = () => {
-  dialogSuccess.value = false
-  router.push('/students') 
+watchEffect(() => {
+  if (!studentNo.value) {
+    studentNo.value = nextNumber.value
+  }
+})
+
+const programs = [
+  'BS Information Technology',
+  'BS Accountancy',
+  'BS Business Administration',
+  'BS Hospitality Management',
+]
+
+const yearLevels = ['1st Year', '2nd Year', '3rd Year', '4th Year']
+
+const scholarshipOptions = [
+  { label: 'None (0%)', rate: 0 },
+  { label: '20% Academic Scholar', rate: 0.2 },
+  { label: '50% Dean / Athletic Scholar', rate: 0.5 },
+  { label: '100% Full Tuition Scholar', rate: 1 },
+]
+
+const handleSave = () => {
+  if (!studentNo.value.trim() || !fullName.value.trim()) {
+    errorMsg.value = 'Pakilagay ang Student Number at Full Name.'
+    return
+  }
+
+  const chosen = scholarshipOptions.find((o) => o.label === scholarshipPreset.value) || scholarshipOptions[0]
+  addStudent({
+    studentNo: studentNo.value.trim(),
+    fullName: fullName.value.trim(),
+    program: program.value,
+    yearLevel: yearLevel.value,
+    scholarshipType: chosen.rate === 0 ? 'None' : chosen.label,
+    discountRate: chosen.rate,
+  })
+
+  errorMsg.value = ''
+  router.push('/students')
 }
 </script>
 
 <template>
-  <v-container class="fill-height d-flex align-center justify-center">
-    <v-card max-width="550" width="100%" class="glass-form-card pa-8" elevation="0">
-      
-      <div class="text-center mb-6">
-        <div class="icon-glow mb-4">
-          <v-icon size="50" color="blue-lighten-3">mdi-account-plus-outline</v-icon>
+  <div>
+    <div class="d-flex flex-wrap align-center justify-space-between ga-3 mb-6">
+      <div>
+        <div class="text-caption font-weight-bold text-green-darken-3" style="letter-spacing: 0.7px;">
+          STUDENTS & SCHOLARS
         </div>
-        <v-card-title class="text-h5 font-weight-bold text-white pa-0">Add New Student</v-card-title>
-        <p class="text-caption text-grey-lighten-1">Enter student details to register in the system</p>
+        <h1 class="text-h5 font-weight-extrabold text-grey-darken-4">
+          Add <span class="glass-serif">Student</span> Profile
+        </h1>
       </div>
 
-      <v-form @submit.prevent="submitForm">
-        <v-text-field v-model="form.StudentID" label="Student ID" variant="outlined" class="glass-input mb-2" required />
-        <v-text-field v-model="form.FirstName" label="First Name" variant="outlined" class="glass-input mb-2" required />
-        <v-text-field v-model="form.LastName" label="Last Name" variant="outlined" class="glass-input mb-2" required />
-        <v-text-field v-model="form.Email" label="Email Address" type="email" variant="outlined" class="glass-input mb-6" required />
-        
-        <v-row>
-          <v-col cols="6">
-            <v-btn variant="text" color="grey-lighten-1" block to="/students" class="rounded-lg text-none">
-              Cancel
-            </v-btn>
-          </v-col>
-          <v-col cols="6">
-            <v-btn type="submit" color="blue-darken-1" block size="large" class="rounded-lg login-btn" :loading="loading">
-              Save Student
-            </v-btn>
-          </v-col>
-        </v-row>
-      </v-form>
+      <v-btn
+        variant="outlined"
+        color="grey-darken-3"
+        class="text-none rounded-pill font-weight-semibold glass-btn-outline"
+        prepend-icon="mdi-arrow-left"
+        @click="router.push('/students')"
+      >
+        Back to Students
+      </v-btn>
+    </div>
+
+    <v-card class="glass-panel pa-6 pa-md-8 mx-auto" style="max-width: 740px;">
+      <v-row>
+        <v-col cols="12" sm="6">
+          <v-text-field
+            v-model="studentNo"
+            label="Student Number"
+            variant="outlined"
+            density="comfortable"
+            prepend-inner-icon="mdi-card-account-details-outline"
+          />
+        </v-col>
+
+        <v-col cols="12" sm="6">
+          <v-select
+            v-model="yearLevel"
+            :items="yearLevels"
+            label="Year Level"
+            variant="outlined"
+            density="comfortable"
+            prepend-inner-icon="mdi-stairs"
+          />
+        </v-col>
+
+        <v-col cols="12">
+          <v-text-field
+            v-model="fullName"
+            label="Full Name"
+            placeholder="e.g., Pedro Penduko"
+            variant="outlined"
+            density="comfortable"
+            prepend-inner-icon="mdi-account-outline"
+            @keyup.enter="handleSave"
+          />
+        </v-col>
+
+        <v-col cols="12" sm="6">
+          <v-select
+            v-model="program"
+            :items="programs"
+            label="Program"
+            variant="outlined"
+            density="comfortable"
+            prepend-inner-icon="mdi-school-outline"
+          />
+        </v-col>
+
+        <v-col cols="12" sm="6">
+          <v-select
+            v-model="scholarshipPreset"
+            :items="scholarshipOptions.map((o) => o.label)"
+            label="Scholarship / Discount"
+            variant="outlined"
+            density="comfortable"
+            prepend-inner-icon="mdi-certificate-outline"
+          />
+        </v-col>
+      </v-row>
+
+      <v-alert
+        v-if="errorMsg"
+        type="error"
+        variant="tonal"
+        density="compact"
+        class="mt-2 mb-4"
+      >
+        {{ errorMsg }}
+      </v-alert>
+
+      <div class="d-flex justify-end ga-2 mt-4">
+        <v-btn
+          variant="text"
+          color="grey-darken-3"
+          class="text-none rounded-pill"
+          @click="router.push('/students')"
+        >
+          Cancel
+        </v-btn>
+        <v-btn
+          color="#141c18"
+          variant="flat"
+          class="text-none rounded-pill text-white font-weight-bold px-6"
+          prepend-icon="mdi-content-save-outline"
+          @click="handleSave"
+        >
+          Save Student
+        </v-btn>
+      </div>
     </v-card>
-
-    <v-dialog v-model="dialogSuccess" max-width="400" persistent>
-      <v-card class="glass-modal-modern pa-8 text-center border-success">
-        <v-avatar color="green-lighten-4" size="80" class="mb-4 icon-glow-green">
-          <v-icon size="48" color="green-darken-2">mdi-check-circle</v-icon>
-        </v-avatar>
-        <h2 class="text-h5 font-weight-bold text-white mb-2">Success!</h2>
-        <p class="text-body-1 text-grey-lighten-1 mb-6">{{ statusMessage }}</p>
-        <v-btn color="green-darken-1" block size="large" rounded="lg" class="text-white font-weight-bold" @click="handleSuccessDone">
-          AWESOME
-        </v-btn>
-      </v-card>
-    </v-dialog>
-
-    <v-dialog v-model="dialogError" max-width="400">
-      <v-card class="glass-modal-modern pa-8 text-center border-error">
-        <v-avatar color="red-lighten-4" size="80" class="mb-4 icon-glow-red">
-          <v-icon size="48" color="red-darken-2">mdi-close-circle</v-icon>
-        </v-avatar>
-        <h2 class="text-h5 font-weight-bold text-white mb-2">Oops!</h2>
-        <p class="text-body-1 text-grey-lighten-1 mb-6">{{ statusMessage }}</p>
-        <v-btn color="red-darken-1" block size="large" rounded="lg" class="text-white font-weight-bold" @click="dialogError = false">
-          TRY AGAIN
-        </v-btn>
-      </v-card>
-    </v-dialog>
-  </v-container>
+  </div>
 </template>
-
-<style scoped>
-/* Glassmorphism Effect */
-.glass-form-card {
-  background: rgba(255, 255, 255, 0.05) !important;
-  backdrop-filter: blur(25px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-radius: 30px !important;
-}
-
-/* Glass Modal Standard */
-.glass-modal-modern {
-  background: rgba(18, 18, 18, 0.9) !important;
-  backdrop-filter: blur(25px) saturate(200%);
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-radius: 32px !important;
-}
-
-.border-success { border: 1px solid rgba(76, 175, 80, 0.4) !important; }
-.border-error { border: 1px solid rgba(244, 67, 54, 0.4) !important; }
-
-/* Icon Glows */
-.icon-glow {
-  display: inline-block;
-  padding: 10px;
-  background: rgba(33, 150, 243, 0.1);
-  border-radius: 20px;
-}
-.icon-glow-green { box-shadow: 0 0 20px rgba(76, 175, 80, 0.2); }
-.icon-glow-red { box-shadow: 0 0 20px rgba(244, 67, 54, 0.2); }
-
-/* Glassy Input styling */
-.glass-input :deep(.v-field) {
-  background: rgba(255, 255, 255, 0.05) !important;
-  border-radius: 12px !important;
-  color: white !important;
-}
-.glass-input :deep(input) { color: white !important; }
-.glass-input :deep(.v-label) { color: rgba(255, 255, 255, 0.6) !important; }
-
-.login-btn {
-  text-transform: none !important;
-  font-weight: bold !important;
-  letter-spacing: 0.5px !important;
-}
-</style>
